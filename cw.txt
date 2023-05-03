@@ -1,0 +1,111 @@
+import math
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+
+R = 405 + 6371 # km
+mu = 398600.5  # km^3/s^2
+w = math.sqrt(mu/R**3) # angular velocity
+
+def CW_propogation(r0, v0, t):
+    wt = w * t
+    swt = np.sin(wt)
+    cwt = np.cos(wt)
+    RR = np.array([[4 - 3*cwt, 0, 0], \
+                [6*(swt - wt), 1, 0], \
+                [0, 0, cwt]])
+    RV = (1/w) * np.array([[swt, 2*(1 - cwt), 0], \
+                        [2*(cwt - 1), 4*swt - 3*wt, 0], \
+                        [0, 0, swt]])
+    VR = np.array([[3*w*swt, 0, 0], \
+                [6*w*(cwt - 1), 0, 0], \
+                [0, 0, -w*swt]])
+    VV = np.array([[cwt, 2*swt, 0], \
+                [-2*swt, 4*cwt - 3, 0], \
+                [0, 0, cwt]])
+    rt = RR @ r0 + RV @ v0
+    vt = VR @ r0 + VV @ v0
+    return rt, vt
+
+def fixed_frame(cw_chaser_pos, t, scale=5): 
+    # solve for the position of the target
+    targ_pos = R * np.vstack((np.cos(w*t), np.sin(w*t), 0))
+
+    # create a tranpose matrix from the CW frame to the fixed frame
+    s_th = np.sin(w*t)
+    c_th = np.cos(w*t)
+    T = np.hstack((np.array([[c_th, -s_th, 0], \
+                             [s_th, c_th, 0], \
+                             [0,0,1], [0,0,0]]), np.vstack((targ_pos,1))))
+    
+    # solve for the position of the chaser in the fixed frame
+    chas_pos = (T @ np.append(cw_chaser_pos*5,1).reshape(4,1))[:-1]
+
+    print(np.linalg.norm(cw_chaser_pos), np.linalg.norm(chas_pos - targ_pos)/5)
+    
+    return chas_pos.reshape(3,), targ_pos.reshape(3,)
+    
+def main():
+    nframes = 1000 # number of steps
+    dt = 20 # timestep
+
+    # intialize CW variables
+    cw_chaser_pos = np.zeros((3,nframes)) # place to store all location data
+    cw_chaser_vel = np.zeros((3,nframes)) # place to store all velocity data
+    cw_chaser_pos[:,0] = np.array([20, 0, 0]) # starting location (r-bar, v-bar, z)
+    cw_chaser_vel[:,0] = np.array([0, 0, 0]) # starting velocity
+    delta_v = np.array([0, 0, 0]) # delta v
+
+    # initialize fixed variables
+    fixed_chaser_pos = np.zeros((3,nframes))
+    fixed_target_pos = np.zeros((3,nframes))
+    fixed_chaser_pos[:,0], fixed_target_pos[:,0] = fixed_frame(cw_chaser_pos[:,0], 0)
+    
+    # propogate       
+    for i in range(1,nframes):
+        cw_chaser_pos[:,i], cw_chaser_vel[:,i] = CW_propogation(cw_chaser_pos[:,i-1], cw_chaser_vel[:,i-1] + delta_v, dt)
+        fixed_chaser_pos[:,i], fixed_target_pos[:,i] = fixed_frame(cw_chaser_pos[:,i], i*dt)
+        
+    # plot
+    fig = plt.figure()
+    ax = fig.add_subplot(122, projection='3d')
+    ax.scatter(cw_chaser_pos[0,:], cw_chaser_pos[1,:], cw_chaser_pos[2,:], marker='.', color='g', alpha=0.5, s=1, label='chaser')
+    ax.scatter(0,0,0, marker='.', color='b', label='target')
+    ax.set_xlabel('r-direction')
+    ax.set_ylabel('v-direction')
+    ax.set_zlabel('z')
+    ax.set_title('CW Frame')  
+    
+    bx = fig.add_subplot(121, projection='3d')
+    bx.scatter(fixed_chaser_pos[0], fixed_chaser_pos[1], marker='.', alpha=0.5, s=1, color='g')
+    bx.scatter(fixed_target_pos[0], fixed_target_pos[1], fixed_target_pos[2], marker='.', alpha=0.5, s=1, color='b')
+    bx.scatter(0,0,0, marker='x', color='k', label='earth')
+    bx.set_xlabel('x-direction')
+    bx.set_ylabel('y-direction')
+    bx.set_zlabel('z')
+    bx.set_title('Fixed Frame')
+    
+    fig.legend(loc='upper center')
+    plt.show()
+
+
+def test():
+    nframes = 2
+    dt = 20
+    xs = np.zeros((nframes,))
+    ys = np.zeros((nframes,))
+    for i in range(nframes):
+        t = dt * i
+        xs[i], ys[i] = fixed(1,2,t)
+
+    figure, axes = plt.subplots(1)
+    
+    axes.scatter(xs, ys, marker='.')
+    axes.set_aspect(1)
+    
+    plt.title('Fixed Frame')
+    plt.show()
+
+main()
+#test()
+    
